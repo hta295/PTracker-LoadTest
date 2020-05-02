@@ -121,8 +121,8 @@ def printer_thread_loop(num_workers: int, output_csv_filename: Optional[str]) ->
     num_other_threads = 2
     logger.info('\t'.join([f'{detail:<12}' for detail in header_list]))
     csv_writer = None   # type: Optional[csv.DictWriter]
-    output_csv = open(output_csv_filename, 'w')
     if output_csv_filename:
+        output_csv = open(output_csv_filename, 'w')
         csv_writer = csv.writer(output_csv)
         csv_writer.writerow(header_list)
     while True:

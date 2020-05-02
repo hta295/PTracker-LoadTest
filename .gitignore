@@ -1,3 +1,4 @@
-utils/secrets.py
+ptracker_loadtest/utils/secrets.py
+*.pyc
 __pycache__
 .idea
