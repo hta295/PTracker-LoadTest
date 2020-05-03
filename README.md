@@ -9,7 +9,8 @@ Spins up a pool of worker threads which simulate load against the [PTracker](htt
 ## Package Structure
 
 * `main.py` - entry point for the load test
-* `Makefile` - make directive to automate build and testing
+* `Makefile` - make directives to automate build and testing
+* `ptracker_session.py` - class definition for an http session to PTracker web server
 * `requirements.txt` - list of `pip3` package dependencies
 * `ptracker_loadtest/` - source files
 	* `load_test.py` - controller for the load test
