@@ -1,4 +1,5 @@
 ptracker_loadtest/utils/secrets.py
 *.pyc
 __pycache__
+.coverage
 .idea

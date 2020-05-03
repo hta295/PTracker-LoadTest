@@ -1,0 +1,6 @@
+[run]
+branch = True
+source = ptracker_loadtest/
+omit =
+    *secrets.py
+    *__init__.py
