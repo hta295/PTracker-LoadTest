@@ -4,7 +4,9 @@ TARGET_PORT=8000
 
 # Kill any ptracker servers in docker
 kill-server:
-	docker kill `docker ps | awk '/ptracker-server/{print $$1}'`
+	for i in `docker ps | awk '/ptracker-server/{print $$1}'`; do \
+		docker kill $$i; \
+	done
 
 # Launch ptracker server container in docker and forward web server endpoint to TARGET_PORT on localhost
 server:
@@ -21,7 +23,7 @@ load: check-num-workers clean kill-server server
 
 # Unit tests for load test
 test:
-	coverage run -m pytest tests.py
+	coverage run -m pytest -s tests.py
 	coverage report -m
 
 # Validates NUM_WORKERS was defined in make call

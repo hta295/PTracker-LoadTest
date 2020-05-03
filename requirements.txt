@@ -1,5 +1,4 @@
 wheel
 requests
-bs4
 pytest
 coverage
