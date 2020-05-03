@@ -1,5 +1,3 @@
-#!/usr/bin/env python3
-
 import argparse
 import bs4
 import csv
@@ -10,9 +8,10 @@ import time
 
 from typing import List, Optional
 
-from utils.secrets import TEST_USER, TEST_PASSWORD
+from .utils import secrets
+from .utils.secrets import TEST_USER, TEST_PASSWORD
 
-from metrics import Metrics
+from .metrics import Metrics
 
 # Number of seconds for printer thread to wait to print updated test details
 PRINTER_SLEEP_TIME = 1
@@ -136,13 +135,18 @@ def printer_thread_loop(num_workers: int, output_csv_filename: Optional[str]) ->
             csv_writer.writerow(details_list)
 
 
-def main():
+def run(cli_args: List[str]):
+    """Runs load testing workflow against PTracker server
+
+    :param cli_args: list of cli args as strings (i.e. sys.argv)
+    :returns: None
+    """
     # Setup logging
     logging.basicConfig(format=LOG_FORMAT, level=logging.INFO)
 
     # Get cli arguments
     arg_parser = get_parser()
-    args = arg_parser.parse_args()
+    args = arg_parser.parse_args(cli_args)
 
     # Get an authenticated PTracker session for the rest of the test
     session = None
@@ -169,7 +173,3 @@ def main():
     logger.info(f"Starting 1 printer thread and {len(workers)} worker threads")
     printer.start()
     [t.start() for t in workers]
-
-
-if __name__ == '__main__':
-    main()

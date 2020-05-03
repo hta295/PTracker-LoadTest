@@ -17,7 +17,12 @@ reqs:
 # Runs load test against ptracker server in docker w/ port forwarded to TARGET_PORT on localhost
 load: check-num-workers clean kill-server server
 	sleep 3
-	ptracker_loadtest/load_test.py -u http://localhost:$(TARGET_PORT) -n $(NUM_WORKERS) -f $(OUTPUT_CSV_FILENAME)
+	./main.py -u http://localhost:$(TARGET_PORT) -n $(NUM_WORKERS) -f $(OUTPUT_CSV_FILENAME)
+
+# Unit tests for load test
+test:
+	coverage run -m pytest tests.py
+	coverage report -m
 
 # Validates NUM_WORKERS was defined in make call
 check-num-workers:

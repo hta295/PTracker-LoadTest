@@ -8,9 +8,11 @@ Spins up a pool of worker threads which simulate load against the [PTracker](htt
 
 ## Package Structure
 
+* `main.py` - entry point for the load test
+* `Makefile` - make directive to automate build and testing
 * `requirements.txt` - list of `pip3` package dependencies
 * `ptracker_loadtest/` - source files
-	* `load_test.py` - entry point to the load test
+	* `load_test.py` - controller for the load test
 	* `metrics.py` - class definition for global metrics container
 	* `utils/` - common utility module. __User needs to create a `secrets.py` file which defines a `TEST_USER` and `TEST_PASSWORD`__
 
@@ -31,7 +33,7 @@ make load NUM_WORKERS=<int>
 This method provides finer-granularity, but it assumes that a PTracker web service is running at the `root_url` already. To run:
 
 ```
-ptracker_loadtest/load_test.py -u root_url [-n num_workers] [-f csv_output_filename]
+main.py -u root_url [-n num_workers] [-f csv_output_filename]
 ```
 
 * `root_url`: The root url for the running PTracker web server (e.g. `http://localhost:8000`)
