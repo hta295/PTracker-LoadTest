@@ -8,6 +8,7 @@ import ptracker_loadtest.load_test as load
 import ptracker_loadtest.metrics as metrics
 import ptracker_loadtest.thread_factory as thread_factory
 
+from ptracker_loadtest.utils.custom_types import TimedResponse
 from ptracker_loadtest.ptracker_session import PTrackerSession
 
 FLOAT_TEST_TOLERANCE = .0001
@@ -24,9 +25,10 @@ def test_get_parser_required_false():
 
 def test_get_parser_required_minimal():
     parser = load.get_parser()
-    cli_args = ['-u', 'foo']
+    cli_args = ['-u', 'foo', '-f', 'out']
     args = parser.parse_args(cli_args)
     assert args.root_url == 'foo'
+    assert args.output_csv_filename == 'out'
 
 
 def test_get_parser_required_optional():
@@ -40,26 +42,35 @@ def test_get_parser_required_optional():
 
 def test__measure_index_latency_success_first_time():
     mock_add_latency = MagicMock()
+    mock_add_success = MagicMock()
     mock_metrics = MagicMock()
     mock_metrics.add_latency = mock_add_latency
+    mock_metrics.add_success = mock_add_success
     mock_index = MagicMock()
-    mock_get_index = MagicMock(return_value=(mock_index, 1.))
+    timed_response = TimedResponse(response=mock_index, seconds_elapsed=1.)
+    mock_get_index = MagicMock(return_value=timed_response)
     mock_session = MagicMock()
     mock_session.get_index = mock_get_index
     load._measure_index_latency(mock_session, mock_metrics)
     mock_add_latency.assert_called_once_with(1.)
+    mock_add_success.assert_called_once_with(1)
 
 
 def test__measure_index_latency_success_after_retries():
     mock_add_latency = MagicMock()
+    mock_add_success = MagicMock()
     mock_metrics = MagicMock()
     mock_metrics.add_latency = mock_add_latency
+    mock_metrics.add_success = mock_add_success
     mock_index = MagicMock()
-    mock_get_index = MagicMock(side_effect=[ConnectionError, ConnectionError, (mock_index, 1.)])
+    timed_response = TimedResponse(response=mock_index, seconds_elapsed=2.)
+    mock_get_index = MagicMock(side_effect=[ConnectionError, ConnectionError, timed_response])
     mock_session = MagicMock()
     mock_session.get_index = mock_get_index
     load._measure_index_latency(mock_session, mock_metrics)
-    mock_add_latency.assert_called_once_with(1.)
+    mock_add_latency.assert_called_once_with(2.)
+    mock_add_success.assert_called_once_with(3)
+
 
 # metrics.py tests
 
@@ -69,6 +80,10 @@ def metrics_container():
     """
     m = metrics.Metrics.get_instance()
     m.average_latency = float('nan')
+    m.total_num_successes = 0
+    m.total_num_attempts = 0
+    m.average_num_attempts = float('nan')
+    return m
 
 
 def test_metrics_get_instance_singleton():
@@ -85,21 +100,43 @@ def test_metrics_get_instance_second_constructor_fails():
 
 def test_add_latency_first(metrics_container):
     first_latency = 1.0
-    m = metrics.Metrics.get_instance()
-    assert math.isnan(m.average_latency)
-    m.add_latency(first_latency)
-    assert m.average_latency == pytest.approx(first_latency, FLOAT_TEST_TOLERANCE)
+    assert math.isnan(metrics_container.average_latency)
+    metrics_container.add_latency(first_latency)
+    assert metrics_container.average_latency == pytest.approx(first_latency, FLOAT_TEST_TOLERANCE)
 
 
 def test_add_latency_moving_average(metrics_container):
     first_latency = 8.0
     second_latency = 4.0
     third_latency = 2.0
+    metrics_container.add_latency(first_latency)
+    metrics_container.add_latency(second_latency)
+    metrics_container.add_latency(third_latency)
+    assert metrics_container.average_latency == pytest.approx(4., FLOAT_TEST_TOLERANCE)
+
+
+def test_add_success_first(metrics_container):
+    first_num_attempts = 2
+    assert metrics_container.total_num_successes == 0
+    assert math.isnan(metrics_container.average_num_attempts)
+    assert metrics_container.total_num_attempts == 0
+    metrics_container.add_success(first_num_attempts)
+    assert metrics_container.total_num_successes == 1
+    assert metrics_container.average_num_attempts == pytest.approx(first_num_attempts, FLOAT_TEST_TOLERANCE)
+    assert metrics_container.total_num_attempts == 2
+
+
+def test_add_success_multiple(metrics_container):
+    first_num_attempts = 20
+    second_num_attempts = 10
+    third_num_attempts = 5
     m = metrics.Metrics.get_instance()
-    m.add_latency(first_latency)
-    m.add_latency(second_latency)
-    m.add_latency(third_latency)
-    assert m.average_latency == pytest.approx(4., FLOAT_TEST_TOLERANCE)
+    m.add_success(first_num_attempts)
+    m.add_success(second_num_attempts)
+    m.add_success(third_num_attempts)
+    assert m.total_num_successes == 3
+    assert m.average_num_attempts == pytest.approx(10., FLOAT_TEST_TOLERANCE)
+    assert m.total_num_attempts == 35
 
 
 # ptracker_session.py tests

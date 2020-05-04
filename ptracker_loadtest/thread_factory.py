@@ -3,7 +3,7 @@ import logging
 import time
 
 from threading import active_count, Thread
-from typing import Callable, Optional
+from typing import Callable, Optional, TextIO
 
 from .metrics import Metrics
 
@@ -22,42 +22,42 @@ class ThreadFactory:
         raise TypeError("ThreadFactory is not instantiable")
 
     @staticmethod
-    def _printer_thread_loop(num_workers: int, csv_writer: Optional[csv.DictWriter], metrics: Metrics) -> None:
+    def _printer_thread_loop(csv_file: TextIO, metrics: Metrics) -> None:
         """Control-loop for printer thread.
 
-        Currently, loop logs the testing details and writes data to a csv_file
+        Currently, the loop just writes data to a csv_file
 
-        :param num_workers: maximum number of worker threads
-        :param csv_writer: the csv writer object to output to, or None if no csv output
+        :param csv_file: the csv file to output to
         :param metrics: the Metrics object to read from
         :returns: None
         """
-        header_list = ['THREAD COUNT', 'AVG LATENCY (s)']
-        logger.info('\t'.join([f'{detail:<12}' for detail in header_list]))
-        if csv_writer:
-            csv_writer.writerow(header_list)
+        csv_writer = csv.writer(csv_file)
+        header_list = ['NUM ACTIVE WORKERS', 'TOTAL NUM SUCCESSES', 'AVG LATENCY (s)', 'AVG NUM ATTEMPTS', 'TOTAL NUM ATTEMPTS']
+        csv_writer.writerow(header_list)
 
         # In addition to worker threads, there should be 1 printer thread and 1 main threads
-        num_other_threads = 2
+        num_non_worker_threads = 2
         while True:
             time.sleep(PRINTER_SLEEP_TIME)
             details_list = [
-                f'{active_count()}/{num_workers + num_other_threads}',
-                f'{metrics.average_latency:.2f}'
+                f'{active_count() - num_non_worker_threads}',
+                f'{metrics.total_num_successes}',
+                f'{metrics.average_latency:.2f}',
+                f'{metrics.average_num_attempts:.2f}',
+                f'{metrics.total_num_attempts}'
             ]
-            logger.info('\t'.join([f'{detail:<12}' for detail in details_list]))
-            if csv_writer:
-                csv_writer.writerow(details_list)
+            csv_writer.writerow(details_list)
+            csv_file.flush()
 
     @staticmethod
-    def create_printer(num_workers: int, csv_writer: Optional[csv.DictWriter], metrics: Metrics) -> Thread:
+    def create_printer(csv_file: TextIO, metrics: Metrics) -> Thread:
         """Creates a printer Thread which is responsible for writing out test results
 
-        :param num_workers: maximum number of worker threads
-        :param csv_writer: the csv writer object to output to, or None if no csv output
+        :param csv_file: the csv file to output to
+        :param metrics: the Metrics container to read from
         :returns: the printer Thread
         """
-        return Thread(target=ThreadFactory._printer_thread_loop, args=(num_workers, csv_writer, metrics))
+        return Thread(target=ThreadFactory._printer_thread_loop, args=(csv_file, metrics))
 
     @staticmethod
     def _worker_thread_loop(func: Callable[[], None]) -> None:

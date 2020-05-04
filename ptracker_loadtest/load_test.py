@@ -9,6 +9,7 @@ from typing import List, Tuple
 from .metrics import Metrics
 from .ptracker_session import PTrackerSession
 from .thread_factory import ThreadFactory
+from .utils.custom_types import TimedResponse
 from .utils.secrets import TEST_USER, TEST_PASSWORD
 
 LOG_FORMAT = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
@@ -39,7 +40,7 @@ def get_parser() -> argparse.ArgumentParser:
                         help='The root URL for the PTracker web service')
     parser.add_argument('-n', '--num_workers', type=int, required=False, default=1,
                         help='Maximum number of worker threads to spin up')
-    parser.add_argument('-f', '--output_csv_filename', type=str, required=False,
+    parser.add_argument('-f', '--output_csv_filename', type=str, required=True,
                         help='Filename of the csv file to write to')
 
     return parser
@@ -52,17 +53,17 @@ def _measure_index_latency(session: PTrackerSession, metrics: Metrics) -> None:
     :returns: tuple containing (the measured latency in seconds [float], num_retries [int])
     """
     num_attempts = 0
-    latency = 0.
-    index_page = None
-    while not index_page:
+    timed_response = TimedResponse(response=None, seconds_elapsed=float('nan'))
+    while not timed_response.response:
         try:
-            index_page, latency = session.get_index()
+            timed_response = session.get_index()
         except Exception:
             # Silently swallow exceptions when connecting
             pass
         finally:
             num_attempts += 1
-    metrics.add_latency(latency)
+    metrics.add_latency(timed_response.seconds_elapsed)
+    metrics.add_success(num_attempts)
 
 
 def create_threads(args: argparse.Namespace) -> Tuple[List[Thread], List[Thread]]:
@@ -80,8 +81,8 @@ def create_threads(args: argparse.Namespace) -> Tuple[List[Thread], List[Thread]
     session.authenticate(TEST_USER, TEST_PASSWORD)
 
     metrics = Metrics.get_instance()
-    csv_writer = csv.writer(open(args.output_csv_filename, 'w')) if args.output_csv_filename else None
-    printer = ThreadFactory.create_printer(args.num_workers, csv_writer, metrics)
+    csv_file = open(args.output_csv_filename, 'w')
+    printer = ThreadFactory.create_printer(csv_file, metrics)
     work_function = partial(_measure_index_latency, session, metrics)
     workers = [ThreadFactory.create_worker(work_function) for _ in range(args.num_workers)]
     return [printer], workers
