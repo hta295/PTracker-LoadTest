@@ -6,6 +6,7 @@ from unittest.mock import MagicMock, patch
 
 import ptracker_loadtest.load_test as load
 import ptracker_loadtest.metrics as metrics
+import ptracker_loadtest.thread_factory as thread_factory
 
 from ptracker_loadtest.ptracker_session import PTrackerSession
 
@@ -36,6 +37,29 @@ def test_get_parser_required_optional():
     assert args.num_workers == 3
     assert args.output_csv_filename == 'out'
 
+
+def test__measure_index_latency_success_first_time():
+    mock_add_latency = MagicMock()
+    mock_metrics = MagicMock()
+    mock_metrics.add_latency = mock_add_latency
+    mock_index = MagicMock()
+    mock_get_index = MagicMock(return_value=(mock_index, 1.))
+    mock_session = MagicMock()
+    mock_session.get_index = mock_get_index
+    load._measure_index_latency(mock_session, mock_metrics)
+    mock_add_latency.assert_called_once_with(1.)
+
+
+def test__measure_index_latency_success_after_retries():
+    mock_add_latency = MagicMock()
+    mock_metrics = MagicMock()
+    mock_metrics.add_latency = mock_add_latency
+    mock_index = MagicMock()
+    mock_get_index = MagicMock(side_effect=[ConnectionError, ConnectionError, (mock_index, 1.)])
+    mock_session = MagicMock()
+    mock_session.get_index = mock_get_index
+    load._measure_index_latency(mock_session, mock_metrics)
+    mock_add_latency.assert_called_once_with(1.)
 
 # metrics.py tests
 
@@ -120,3 +144,21 @@ def test_get_index(session):
     assert timed_response.seconds_elapsed == pytest.approx(1., FLOAT_TEST_TOLERANCE)
     assert timed_response.response == mock_index
     mock_get.assert_called_with('foo')
+
+
+# thread_factory.py tests
+
+def test_factory_not_instantiable():
+    with pytest.raises(TypeError):
+        thread_factory.ThreadFactory()
+
+
+def test_create_worker():
+    mock_thread = MagicMock()
+    mock_thread_constructor = MagicMock(return_value=mock_thread)
+    mock_work_func = MagicMock()
+    with patch.object(thread_factory, 'Thread', mock_thread_constructor):
+        actual = thread_factory.ThreadFactory.create_worker(mock_work_func)
+        mock_thread_constructor.assert_called_once_with(target=thread_factory.ThreadFactory._worker_thread_loop,
+                                                        args=(mock_work_func,))
+        assert actual == mock_thread

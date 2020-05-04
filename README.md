@@ -10,11 +10,12 @@ Spins up a pool of worker threads which simulate load against the [PTracker](htt
 
 * `main.py` - entry point for the load test
 * `Makefile` - make directives to automate build and testing
-* `ptracker_session.py` - class definition for an http session to PTracker web server
 * `requirements.txt` - list of `pip3` package dependencies
 * `ptracker_loadtest/` - source files
 	* `load_test.py` - controller for the load test
 	* `metrics.py` - class definition for global metrics container
+	* `ptracker_session.py` - class definition for an http session to PTracker web server
+	* `thread_factory.py` - class definition for static factory that builds threads for the test
 	* `utils/` - common utility module. __User needs to create a `secrets.py` file which defines a `TEST_USER` and `TEST_PASSWORD`__
 
 ## Usage

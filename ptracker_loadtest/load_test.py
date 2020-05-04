@@ -1,18 +1,15 @@
 import argparse
 import csv
 import logging
-import time
 
-from threading import active_count, Thread
-from typing import List, Optional, Tuple
-
-from .ptracker_session import PTrackerSession
-from .utils.secrets import TEST_USER, TEST_PASSWORD
+from functools import partial
+from threading import Thread
+from typing import List, Tuple
 
 from .metrics import Metrics
-
-# Number of seconds for printer thread to wait to print updated test details
-PRINTER_SLEEP_TIME = 1
+from .ptracker_session import PTrackerSession
+from .thread_factory import ThreadFactory
+from .utils.secrets import TEST_USER, TEST_PASSWORD
 
 LOG_FORMAT = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 
@@ -48,111 +45,46 @@ def get_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def measure_index_latency(session: PTrackerSession) -> Tuple[float, int]:
-    """Measures the response latency when user retrieves the PTracker index
+def _measure_index_latency(session: PTrackerSession, metrics: Metrics) -> None:
+    """Measures the response latency when user retrieves the PTracker index and writes it to Metrics
 
     :param session: the http Session
     :returns: tuple containing (the measured latency in seconds [float], num_retries [int])
     """
     num_attempts = 0
     latency = 0.
-    while num_attempts == 0:
+    index_page = None
+    while not index_page:
         try:
-            _, latency = session.get_index()
+            index_page, latency = session.get_index()
         except Exception:
             # Silently swallow exceptions when connecting
             pass
         finally:
             num_attempts += 1
-    return latency, num_attempts
+    metrics.add_latency(latency)
 
 
-def worker_thread_loop(session: PTrackerSession) -> None:
-    """Control-loop for worker threads.
+def create_threads(args: argparse.Namespace) -> Tuple[List[Thread], List[Thread]]:
+    """Creates the threads needed for the load test
 
-    Worker threads generate load for the PTracker web service. Currently, this
-    consists of repeatedly retrieving the list of productivity intervals. The
-    server workflow for this is:
+    This function distinguishes between helper threads and worker threads. ALL
+    helper threads should be started before the test begins. The test strategy can
+    determine how to start the worker threads.
 
-    Client --request--> Web Server --get_all_intervals--> DB --response--> Web Server --response--> Client
-
-    TODO: support for other testing modes
-
-    :param session: the authenticated test Session
-    :returns: None
+    :param args: the cli args
+    :returns: tuple(helper_thread_list, worker_thread_list
     """
-    while True:
-        latency, _ = measure_index_latency(session)
-        Metrics.get_instance().add_latency(latency)
-
-
-def printer_thread_loop(num_workers: int, output_csv_filename: Optional[str]) -> None:
-    """Control-loop for printer thread.
-
-    Currently, loop logs the testing details and writes data to a csv_file
-
-    :param num_workers: maximum number of worker threads
-    :param output_csv_filename: filename for csv file to write details to, or None if we should not write to a csv
-    """
-    metrics = Metrics.get_instance()
-    header_list = ['THREAD COUNT', 'AVG LATENCY (s)']
-    # In addition to worker threads, there should be 1 printer thread and 1 main threads
-    num_other_threads = 2
-    logger.info('\t'.join([f'{detail:<12}' for detail in header_list]))
-    csv_writer = None   # type: Optional[csv.DictWriter]
-    if output_csv_filename:
-        output_csv = open(output_csv_filename, 'w')
-        csv_writer = csv.writer(output_csv)
-        csv_writer.writerow(header_list)
-    while True:
-        time.sleep(PRINTER_SLEEP_TIME)
-        details_list = [
-            f'{active_count()}/{num_workers + num_other_threads}',
-            f'{metrics.average_latency:.2f}'
-        ]
-        logger.info('\t'.join([f'{detail:<12}' for detail in details_list]))
-        if csv_writer:
-            csv_writer.writerow(details_list)
-
-
-# noinspection PyListCreation
-def create_threads(session: PTrackerSession, args: argparse.Namespace) -> List[Thread]:
-    """Creates a new list of Threads, sorted from highest priority first (e.g. printer) to lowest (e.g. workers)
-
-    :param session: the PTracker session
-    :param args: the user's cli arguments, used to parametrize the test
-    :returns: the sorted list of Threads
-    """
-    threads = []    # type: List[Thread]
-    # Add a printer thread to write testing results
-    threads.append(Thread(target=printer_thread_loop, args=(args.num_workers, args.output_csv_filename)))
-    # Add worker threads to simulate the client traffic
-    threads += [Thread(target=worker_thread_loop, args=(session,)) for _ in range(args.num_workers)]
-    return threads
-
-
-def start_test(args:argparse.Namespace) -> None:
-    """Starts the load test
-
-    Spins up a printer thread to write out test results, and a user-defined number of
-    worker threads to simulate client load on PTracker
-
-    :param args: the user's arguments from cli
-    :returns: None
-    """
-    # Get an authenticated PTracker session for the rest of the test
+    # Get an authenticated PTracker session for the workers to use
     session = PTrackerSession(args.root_url)
-    try:
-        session.authenticate(TEST_USER, TEST_PASSWORD)
-    except Exception:
-        logger.exception("Failed to authenticate to PTracker")
-        exit(1)
-    logging.debug(f"Got authenticated http session: {str(session)}")
+    session.authenticate(TEST_USER, TEST_PASSWORD)
 
-    threads = create_threads(session, args)
-
-    logger.debug(f"Starting {len(threads)} thread")
-    [t.start() for t in threads]
+    metrics = Metrics.get_instance()
+    csv_writer = csv.writer(open(args.output_csv_filename, 'w')) if args.output_csv_filename else None
+    printer = ThreadFactory.create_printer(args.num_workers, csv_writer, metrics)
+    work_function = partial(_measure_index_latency, session, metrics)
+    workers = [ThreadFactory.create_worker(work_function) for _ in range(args.num_workers)]
+    return [printer], workers
 
 
 def run(cli_args: List[str]) -> None:
@@ -163,4 +95,7 @@ def run(cli_args: List[str]) -> None:
     """
     setup_logging()
     arg_parser = get_parser()
-    start_test(arg_parser.parse_args(cli_args))
+    helpers, workers = create_threads(arg_parser.parse_args(cli_args))
+    logging.debug("Starting the load test...")
+    [h.start() for h in helpers]
+    [w.start() for w in workers]

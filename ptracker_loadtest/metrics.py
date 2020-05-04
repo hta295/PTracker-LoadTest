@@ -25,8 +25,8 @@ class Metrics:
             self.average_latency = self.average_latency / 2 + latency / 2 if not math.isnan(self.average_latency) \
                                      else latency
 
-    @classmethod
-    def get_instance(cls) -> Metrics:
+    @staticmethod
+    def get_instance() -> Metrics:
         """Returns the single Metrics instance
 
         :returns: reference to the sole Metrics instance
