@@ -11,7 +11,7 @@ import ptracker_loadtest.thread_factory as thread_factory
 from ptracker_loadtest.utils.custom_types import TimedResponse
 from ptracker_loadtest.ptracker_session import PTrackerSession
 
-FLOAT_TEST_TOLERANCE = .0001
+FLOAT_TEST_EQUALITY_TOLERANCE = .0001
 
 
 # load_test.py tests
@@ -79,10 +79,9 @@ def metrics_container():
     """Returns a Metrics instance whose average latency is reset
     """
     m = metrics.Metrics.get_instance()
-    m.average_latency = float('nan')
+    m.total_latency_seconds = 0.
     m.total_num_successes = 0
     m.total_num_attempts = 0
-    m.average_num_attempts = float('nan')
     return m
 
 
@@ -100,29 +99,27 @@ def test_metrics_get_instance_second_constructor_fails():
 
 def test_add_latency_first(metrics_container):
     first_latency = 1.0
-    assert math.isnan(metrics_container.average_latency)
+    assert metrics_container.total_latency_seconds == pytest.approx(0., FLOAT_TEST_EQUALITY_TOLERANCE)
     metrics_container.add_latency(first_latency)
-    assert metrics_container.average_latency == pytest.approx(first_latency, FLOAT_TEST_TOLERANCE)
+    assert metrics_container.total_latency_seconds == pytest.approx(first_latency, FLOAT_TEST_EQUALITY_TOLERANCE)
 
 
-def test_add_latency_moving_average(metrics_container):
+def test_add_latency_multiple(metrics_container):
     first_latency = 8.0
     second_latency = 4.0
     third_latency = 2.0
     metrics_container.add_latency(first_latency)
     metrics_container.add_latency(second_latency)
     metrics_container.add_latency(third_latency)
-    assert metrics_container.average_latency == pytest.approx(4., FLOAT_TEST_TOLERANCE)
+    assert metrics_container.total_latency_seconds == pytest.approx(14., FLOAT_TEST_EQUALITY_TOLERANCE)
 
 
 def test_add_success_first(metrics_container):
     first_num_attempts = 2
     assert metrics_container.total_num_successes == 0
-    assert math.isnan(metrics_container.average_num_attempts)
     assert metrics_container.total_num_attempts == 0
     metrics_container.add_success(first_num_attempts)
     assert metrics_container.total_num_successes == 1
-    assert metrics_container.average_num_attempts == pytest.approx(first_num_attempts, FLOAT_TEST_TOLERANCE)
     assert metrics_container.total_num_attempts == 2
 
 
@@ -130,13 +127,11 @@ def test_add_success_multiple(metrics_container):
     first_num_attempts = 20
     second_num_attempts = 10
     third_num_attempts = 5
-    m = metrics.Metrics.get_instance()
-    m.add_success(first_num_attempts)
-    m.add_success(second_num_attempts)
-    m.add_success(third_num_attempts)
-    assert m.total_num_successes == 3
-    assert m.average_num_attempts == pytest.approx(10., FLOAT_TEST_TOLERANCE)
-    assert m.total_num_attempts == 35
+    metrics_container.add_success(first_num_attempts)
+    metrics_container.add_success(second_num_attempts)
+    metrics_container.add_success(third_num_attempts)
+    assert metrics_container.total_num_successes == 3
+    assert metrics_container.total_num_attempts == 35
 
 
 # ptracker_session.py tests
@@ -178,7 +173,7 @@ def test_get_index(session):
     print(session.get('foo'))
 
     timed_response = session.get_index()
-    assert timed_response.seconds_elapsed == pytest.approx(1., FLOAT_TEST_TOLERANCE)
+    assert timed_response.seconds_elapsed == pytest.approx(1., FLOAT_TEST_EQUALITY_TOLERANCE)
     assert timed_response.response == mock_index
     mock_get.assert_called_with('foo')
 

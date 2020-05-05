@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import logging
-import math
 import threading
 
 logger = logging.getLogger(__name__)
@@ -13,31 +12,28 @@ class Metrics:
 
     _instance = None    # type: Metrics
 
-    def add_latency(self, latency: float) -> None:
+    def add_latency(self, latency_seconds: float) -> None:
         """Submits a new response latency to the Metrics object
 
-        Adding a new latency metric updates the latency's moving average
+        Adding a new latency metric updates the latency total.
 
-        :param latency: the new latency
+        :param latency_seconds: the new latency in seconds
         :returns: None
         """
-        with self.average_latency_lock:
-            self.average_latency = self.average_latency / 2 + latency / 2 \
-                if not math.isnan(self.average_latency) else latency
+        with self.latency_metric_lock:
+            self.total_latency_seconds += latency_seconds
 
     def add_success(self, num_attempts: int) -> None:
         """Submits a new success as well as the number of attempts to the Metrics object
 
-        Adding a new num_attempts metric updates the attempt count's moving average and total.
+        Adding a new num_attempts metric updates the attempt count's total.
         and increments the Metrics object's success count
 
         :param num_attempts: the number of attempts to add to count
         :returns: None
         """
-        with self.counts_lock:
+        with self.count_metrics_lock:
             self.total_num_successes += 1
-            self.average_num_attempts = self.average_num_attempts / 2 + float(num_attempts) / 2 \
-                if not math.isnan(self.average_num_attempts) else float(num_attempts)
             self.total_num_attempts += num_attempts
 
     @staticmethod
@@ -59,10 +55,9 @@ class Metrics:
             logger.debug("Creating new Metrics instance")
             Metrics._instance = self
 
-            # Moving average request latency (measured from application-layer)
-            self.average_latency = float('nan')
-            self.average_latency_lock = threading.Lock()
-            self.total_num_successes = 0
-            self.average_num_attempts = float('nan')
+            # Total request latency (measured from application-layer)
+            self.total_latency_seconds = 0.
             self.total_num_attempts = 0
-            self.counts_lock = threading.Lock()
+            self.total_num_successes = 0
+            self.latency_metric_lock = threading.Lock()
+            self.count_metrics_lock = threading.Lock()

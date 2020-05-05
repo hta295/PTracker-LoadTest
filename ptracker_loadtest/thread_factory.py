@@ -32,7 +32,7 @@ class ThreadFactory:
         :returns: None
         """
         csv_writer = csv.writer(csv_file)
-        header_list = ['NUM ACTIVE WORKERS', 'TOTAL NUM SUCCESSES', 'AVG LATENCY (s)', 'AVG NUM ATTEMPTS', 'TOTAL NUM ATTEMPTS']
+        header_list = ['NUM ACTIVE WORKERS', 'TOTAL NUM SUCCESSES', 'TOTAL LATENCY (s)', 'TOTAL NUM ATTEMPTS']
         csv_writer.writerow(header_list)
 
         # In addition to worker threads, there should be 1 printer thread and 1 main threads
@@ -42,8 +42,7 @@ class ThreadFactory:
             details_list = [
                 f'{active_count() - num_non_worker_threads}',
                 f'{metrics.total_num_successes}',
-                f'{metrics.average_latency:.2f}',
-                f'{metrics.average_num_attempts:.2f}',
+                f'{metrics.total_latency_seconds:.2f}',
                 f'{metrics.total_num_attempts}'
             ]
             csv_writer.writerow(details_list)
