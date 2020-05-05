@@ -1,20 +1,28 @@
-import math
 import pytest
 import requests
 
 from unittest.mock import MagicMock, patch
 
 import ptracker_loadtest.load_test as load
-import ptracker_loadtest.metrics as metrics
 import ptracker_loadtest.thread_factory as thread_factory
 
-from ptracker_loadtest.utils.custom_types import TimedResponse
+from ptracker_loadtest.metrics import Metrics
 from ptracker_loadtest.ptracker_session import PTrackerSession
+from ptracker_loadtest.utils.custom_types import TimedResponse
 
 FLOAT_TEST_EQUALITY_TOLERANCE = .0001
 
 
 # load_test.py tests
+
+def test_setup_logging_config():
+    mock_logging = MagicMock()
+    mock_config = MagicMock()
+    mock_logging.basicConfig = mock_config
+    with patch.object(load, 'logging', mock_logging):
+        load.setup_logging()
+        mock_config.assert_called_once()
+
 
 def test_get_parser_required_false():
     parser = load.get_parser()
@@ -36,7 +44,7 @@ def test_get_parser_required_optional():
     cli_args = ['-u', 'foo', '-n', '3', '-f', 'out']
     args = parser.parse_args(cli_args)
     assert args.root_url == 'foo'
-    assert args.num_workers == 3
+    assert args.num_iterations == 3
     assert args.output_csv_filename == 'out'
 
 
@@ -72,66 +80,98 @@ def test__measure_index_latency_success_after_retries():
     mock_add_success.assert_called_once_with(3)
 
 
+def test_create_workers_authenticated_session():
+    mock_session = MagicMock()
+    mock_constructor = MagicMock(return_value=mock_session)
+    mock_auth = MagicMock()
+    mock_session.authenticate = mock_auth
+    with patch.object(load, 'PTrackerSession', mock_constructor):
+        load.create_workers(1, 'foo', MagicMock(), 1)
+        mock_constructor.assert_called_with('foo')
+        mock_auth.assert_called_once()
+
+
+def test_write_metrics_writes_to_csv():
+    mock_metrics = MagicMock()
+    mock_metrics.num_workers = 2
+    mock_metrics.total_num_successes = 5
+    mock_metrics.total_latency_seconds = 3.45312
+    mock_metrics.total_num_attempts = 10
+    mock_writer = MagicMock()
+    mock_writerow = MagicMock()
+    mock_writer.writerow = mock_writerow
+    details_list = ['2', '5', '3.45', '10']
+    load.write_metrics(mock_writer, mock_metrics)
+    mock_writerow.assert_called_once_with(details_list)
+
+
+def test__create_load_test_csv_writer_returns_writer():
+    mock_file = MagicMock()
+    mock_writer = MagicMock()
+    mock_csv = MagicMock()
+    mock_csv.writer = MagicMock(return_value=mock_writer)
+    with patch.object(load, 'csv', mock_csv):
+        actual = load._create_load_test_csv_writer(mock_file)
+        mock_csv.writer.assert_called_once_with(mock_file)
+        assert actual == mock_writer
+
+
+def test__create_load_test_csv_writer_prepends_some_header():
+    mock_file = MagicMock()
+    mock_writer = MagicMock()
+    mock_csv = MagicMock()
+    mock_csv.writer = MagicMock(return_value=mock_writer)
+    with patch.object(load, 'csv', mock_csv):
+        load._create_load_test_csv_writer(mock_file)
+        mock_writer.writerow.assert_called_once()
+
+
 # metrics.py tests
 
-@pytest.fixture
-def metrics_container():
-    """Returns a Metrics instance whose average latency is reset
-    """
-    m = metrics.Metrics.get_instance()
-    m.total_latency_seconds = 0.
-    m.total_num_successes = 0
-    m.total_num_attempts = 0
-    return m
+def test_num_workers_metrics():
+    metrics = Metrics(20)
+    assert metrics.num_workers == 20
 
 
-def test_metrics_get_instance_singleton():
-    first_instance = metrics.Metrics.get_instance()
-    second_instance = metrics.Metrics.get_instance()
-    assert first_instance == second_instance
-
-
-def test_metrics_get_instance_second_constructor_fails():
-    first_instance = metrics.Metrics.get_instance()
-    with pytest.raises(TypeError):
-        metrics.Metrics()
-
-
-def test_add_latency_first(metrics_container):
+def test_add_latency_first():
+    metrics = Metrics(1)
     first_latency = 1.0
-    assert metrics_container.total_latency_seconds == pytest.approx(0., FLOAT_TEST_EQUALITY_TOLERANCE)
-    metrics_container.add_latency(first_latency)
-    assert metrics_container.total_latency_seconds == pytest.approx(first_latency, FLOAT_TEST_EQUALITY_TOLERANCE)
+    assert metrics.total_latency_seconds == pytest.approx(0., FLOAT_TEST_EQUALITY_TOLERANCE)
+    metrics.add_latency(first_latency)
+    assert metrics.total_latency_seconds == pytest.approx(first_latency, FLOAT_TEST_EQUALITY_TOLERANCE)
 
 
-def test_add_latency_multiple(metrics_container):
+def test_add_latency_multiple():
+    metrics = Metrics(1)
     first_latency = 8.0
     second_latency = 4.0
     third_latency = 2.0
-    metrics_container.add_latency(first_latency)
-    metrics_container.add_latency(second_latency)
-    metrics_container.add_latency(third_latency)
-    assert metrics_container.total_latency_seconds == pytest.approx(14., FLOAT_TEST_EQUALITY_TOLERANCE)
+    metrics.add_latency(first_latency)
+    metrics.add_latency(second_latency)
+    metrics.add_latency(third_latency)
+    assert metrics.total_latency_seconds == pytest.approx(14., FLOAT_TEST_EQUALITY_TOLERANCE)
 
 
-def test_add_success_first(metrics_container):
+def test_add_success_first():
+    metrics = Metrics(1)
     first_num_attempts = 2
-    assert metrics_container.total_num_successes == 0
-    assert metrics_container.total_num_attempts == 0
-    metrics_container.add_success(first_num_attempts)
-    assert metrics_container.total_num_successes == 1
-    assert metrics_container.total_num_attempts == 2
+    assert metrics.total_num_successes == 0
+    assert metrics.total_num_attempts == 0
+    metrics.add_success(first_num_attempts)
+    assert metrics.total_num_successes == 1
+    assert metrics.total_num_attempts == 2
 
 
-def test_add_success_multiple(metrics_container):
+def test_add_success_multiple():
+    metrics = Metrics(1)
     first_num_attempts = 20
     second_num_attempts = 10
     third_num_attempts = 5
-    metrics_container.add_success(first_num_attempts)
-    metrics_container.add_success(second_num_attempts)
-    metrics_container.add_success(third_num_attempts)
-    assert metrics_container.total_num_successes == 3
-    assert metrics_container.total_num_attempts == 35
+    metrics.add_success(first_num_attempts)
+    metrics.add_success(second_num_attempts)
+    metrics.add_success(third_num_attempts)
+    assert metrics.total_num_successes == 3
+    assert metrics.total_num_attempts == 35
 
 
 # ptracker_session.py tests
@@ -185,12 +225,13 @@ def test_factory_not_instantiable():
         thread_factory.ThreadFactory()
 
 
-def test_create_worker():
+def test_create_timed_worker():
     mock_thread = MagicMock()
     mock_thread_constructor = MagicMock(return_value=mock_thread)
     mock_work_func = MagicMock()
+    lifetime = 5
     with patch.object(thread_factory, 'Thread', mock_thread_constructor):
-        actual = thread_factory.ThreadFactory.create_worker(mock_work_func)
+        actual = thread_factory.ThreadFactory.create_timed_worker(lifetime, mock_work_func)
         mock_thread_constructor.assert_called_once_with(target=thread_factory.ThreadFactory._worker_thread_loop,
-                                                        args=(mock_work_func,))
+                                                        args=(lifetime, mock_work_func))
         assert actual == mock_thread
